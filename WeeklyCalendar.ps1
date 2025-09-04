@@ -55,17 +55,17 @@
 param (
     [Parameter(ParameterSetName = 'Default')]
     [Parameter(ParameterSetName = 'SaveAs')]
-    [ValidateRange(1900, 2100)]
+    #[ValidateRange(1900, 2100)]
     [int]$Year = (Get-Date).Year,
     
     [Parameter(ParameterSetName = 'Default')]
     [Parameter(ParameterSetName = 'SaveAs')]
-    [ValidateRange(1, 53)]
+    #[ValidateRange(1, 53)]
     [int]$FromWeek = 1,
     
     [Parameter(ParameterSetName = 'Default')]
     [Parameter(ParameterSetName = 'SaveAs')]
-    [ValidateRange(1, 104)]
+    #[ValidateRange(1, 52)]
     [int]$NumberOfWeeks = 6,
     
     [Parameter(ParameterSetName = 'SaveAs', Mandatory = $true)]
@@ -206,10 +206,19 @@ Begin {
                 # Row 1: Header
                 $CurrentRow = 1
 
-                if ($actualWeek -in @(52,53) -or ($week -eq $FromWeek)) {
+                if ($actualWeek -in @(52,53)) {
+                    # Year transition case for week 52/53
                     $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($startDate.Year))"
                 } elseif ($actualWeek -in @(1,2)) {
+                    # Year transition case for week 1/2
                     $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($endDate.Year))"
+                } elseif ($groupingCounter -eq 1) {
+                    # First week of the group - show ending year or starting year week number is 1
+                    if ($actualWeek -eq 1) {
+                        $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($startDate.Year))"
+                    } else {
+                        $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($endDate.Year))"
+                    }
                 } else {
                     $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek"
                 }
@@ -436,11 +445,11 @@ Begin {
         [CmdletBinding()]
         param(
             [Parameter(Mandatory)]
-            [ValidateRange(1900, 2100)]
+            #[ValidateRange(1900, 2100)]
             [int]$Year,
             
             [Parameter(Mandatory)]
-            [ValidateRange(1, 53)]
+            #[ValidateRange(1, 53)]
             [int]$Week
         )
         
