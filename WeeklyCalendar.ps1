@@ -184,7 +184,7 @@ Begin {
                 $progress.PercentComplete = $currentProgress
                 Write-Progress @progress
 
-                if ($week -gt $FromWeek -and $endDate.Year -gt $startDate.Year) {
+                if ($groupingCounter -ne 1 -and $week -gt $FromWeek -and $endDate.Year -gt $startDate.Year) {
                     # Section break on new year - insert break at current position
                     $doc.Range($doc.Content.End - 1, $doc.Content.End - 1).InsertBreak($Constants.WD_SECTION_BREAK_NEXT_PAGE)
                     $groupingCounter = 1
@@ -206,19 +206,19 @@ Begin {
                 # Row 1: Header
                 $CurrentRow = 1
 
-                if ($actualWeek -in @(52,53)) {
-                    # Year transition case for week 52/53
-                    $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($startDate.Year))"
-                } elseif ($actualWeek -in @(1,2)) {
-                    # Year transition case for week 1/2
-                    $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($endDate.Year))"
-                } elseif ($groupingCounter -eq 1) {
+                if ($groupingCounter -eq 1) {
                     # First week of the group - show ending year or starting year week number is 1
                     if ($actualWeek -eq 1) {
                         $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($startDate.Year))"
                     } else {
                         $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($endDate.Year))"
                     }
+                } elseif ($actualWeek -in @(52,53)) {
+                    # Year transition case for week 52/53
+                    $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($startDate.Year))"
+                } elseif ($actualWeek -in @(1,2)) {
+                    # Year transition case for week 1/2
+                    $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($endDate.Year))"
                 } else {
                     $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek"
                 }
