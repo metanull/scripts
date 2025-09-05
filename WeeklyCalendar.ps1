@@ -94,7 +94,17 @@ param (
     [Parameter(ParameterSetName = 'SaveAs')]
     [ValidateRange(8, 24)]
     [int]$HeaderFontSize = 16,
-    
+
+    [Parameter(ParameterSetName = 'Default')]
+    [Parameter(ParameterSetName = 'SaveAs')]
+    [ValidateRange(8, 24)]
+    [int]$SubtitleFontSize = 8,
+
+    [Parameter(ParameterSetName = 'Default')]
+    [Parameter(ParameterSetName = 'SaveAs')]
+    [ValidateRange(8, 24)]
+    [int]$FontSize = 10,
+
     [Parameter(ParameterSetName = 'Default')]
     [Parameter(ParameterSetName = 'SaveAs')]
     [string]$FontFamily = 'Aptos',
@@ -105,7 +115,7 @@ param (
 Process {
     # Main script execution
     try {
-        New-WeeklyCalendar -Year $Year -FromWeek $FromWeek -NumberOfWeeks $NumberOfWeeks -SaveAs $SaveAs -Language $Language -HeaderFontSize $HeaderFontSize -FontFamily $FontFamily -Force:$Force -ParameterSetName $PSCmdlet.ParameterSetName
+        New-WeeklyCalendar -Year $Year -FromWeek $FromWeek -NumberOfWeeks $NumberOfWeeks -SaveAs $SaveAs -Language $Language -HeaderFontSize $HeaderFontSize -SubtitleFontSize $SubtitleFontSize -FontSize $FontSize -FontFamily $FontFamily -Force:$Force -ParameterSetName $PSCmdlet.ParameterSetName
     }
     catch {
         Write-Error "Failed to generate calendar: $_"
@@ -123,6 +133,8 @@ Begin {
             [string]$SaveAs,
             [string]$Language,
             [int]$HeaderFontSize,
+            [int]$SubtitleFontSize,
+            [int]$FontSize,
             [string]$FontFamily,
             [switch]$Force,
             [string]$ParameterSetName
@@ -229,28 +241,28 @@ Begin {
                 $CurrentRow++
                 if ($startDate.Month -ne $endDate.Month) {
                     if ($startDate.Year -ne $endDate.Year) {
-                        $SubtitleText = $LanguageConfig.DateFormat.DifferentYear -f $startDate.ToString("d MMMM yyyy"), $endDate.ToString("d MMMM yyyy")
+                        $SubtitleText = $LanguageConfig.DateFormat.DifferentYear -f $startDate.ToString("d'/'MM'/'yyyy"), $endDate.ToString("d'/'MM'/'yyyy")
                     } else {
-                        $SubtitleText = $LanguageConfig.DateFormat.DifferentMonth -f $startDate.ToString("d MMM"), $endDate.ToString("d MMMM yyyy")
+                        $SubtitleText = $LanguageConfig.DateFormat.DifferentMonth -f $startDate.ToString("d'/'MM"), $endDate.ToString("d'/'MM'/'yyyy")
                     }
                 } else {
-                    $SubtitleText = $LanguageConfig.DateFormat.SameMonth -f $startDate.Day, $endDate.ToString("d MMMM")
+                    $SubtitleText = $LanguageConfig.DateFormat.SameMonth -f $startDate.Day, $endDate.ToString("d'/'MM")
                 }
                 
-                Add-TableRow -Table $table -RowNumber $CurrentRow -Text $SubtitleText -FontFamily $FontFamily -FontSize 8 -Bold -FontColor ([System.Drawing.Color]::FromArgb(128, 0, 0))
+                Add-TableRow -Table $table -RowNumber $CurrentRow -Text $SubtitleText -FontFamily $FontFamily -FontSize $FontSize # -FontSize $SubtitleFontSize -Bold -FontColor ([System.Drawing.Color]::FromArgb(128, 0, 0))
 
                 # Row 3: Spacer
                 $CurrentRow++
-                Add-TableRow -Table $table -RowNumber $CurrentRow -Text "" -FontFamily $FontFamily -FontSize 8
+                Add-TableRow -Table $table -RowNumber $CurrentRow -Text "`t" -FontFamily $FontFamily -FontSize $FontSize
 
                 # Rows 4 to 8: Days
                 $days = $LanguageConfig.Days
                 for ($i = 0; $i -lt $days.Count; $i++) {
                     $CurrentRow++
-                    Add-TableRow -Table $table -RowNumber $CurrentRow -Text "$($days[$i])`t:" -FontFamily $FontFamily -FontSize 8
+                    Add-TableRow -Table $table -RowNumber $CurrentRow -Text "$($days[$i])`t:" -FontFamily $FontFamily -FontSize $FontSize
                 }
 
-                if ($groupingCounter -gt 0 -and $groupingCounter % 4 -eq 0) {
+                if ($groupingCounter -gt 0 -and $groupingCounter % 3 -eq 0) {
                     # Page break on every multiple of 4 - insert break at current position
                     $doc.Range($doc.Content.End - 1, $doc.Content.End - 1).InsertBreak($Constants.WD_SECTION_BREAK_NEXT_PAGE)
                 } else {
@@ -338,6 +350,9 @@ Begin {
             WD_BORDER_RIGHT = 4
             WD_BORDER_HORIZONTAL = 5
             WD_BORDER_VERTICAL = 6
+            WD_ROW_HEIGHT_AUTO = 0
+            WD_ROW_HEIGHT_AT_LEAST = 1
+            WD_ROW_HEIGHT_EXACTLY = 2
         }
         
         switch ($PSCmdlet.ParameterSetName) {
@@ -565,13 +580,15 @@ Begin {
             
             [int]$FontSize = 8,
             
+            [double]$LineHeight = 1.0,
+            
             [switch]$Bold,
             
             [System.Drawing.Color]$FontColor,
             
             [switch]$IsHeader,
             
-            [switch]$HasBorders = $true
+            [switch]$HasNoBorders
         )
         
         $Constants = Get-WordConstants -All
@@ -581,6 +598,11 @@ Begin {
             $cell = $Table.Cell($RowNumber, 1)
             $cell.Range.Text = "" # Required to avoid Word reusing the previous range!
             Set-CellBorders -Cell $cell -LineStyle $Constants.WD_LINE_STYLE_NONE
+
+            # Set the Line Height
+            $row = $Table.Rows.Item($RowNumber)
+            $row.HeightRule = $Constants.WD_ROW_HEIGHT_EXACTLY
+            $row.Height = $Table.Application.CentimetersToPoints($LineHeight)
             
             # Configure the paragraph
             $paragraph = $cell.Range.Paragraphs.Item(1)
@@ -599,8 +621,8 @@ Begin {
                 $paragraph.Range.Font.Color = $FontColor
             }
             
-            # Apply borders for non-header rows
-            if (-not $IsHeader -and $HasBorders) {
+            # Apply borders unless HasNoBorders is specified
+            if (-not $HasNoBorders) {
                 Set-ParagraphBorders -Paragraph $paragraph
             }
         }
