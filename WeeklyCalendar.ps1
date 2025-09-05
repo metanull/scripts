@@ -15,14 +15,17 @@
 .PARAMETER NumberOfWeeks
     The number of weeks to generate (1-52). Defaults to 6.
 
+.PARAMETER BreakAfter
+    Number of weeks after which to insert a page break. Defaults to 3. Set to 0 to disable page breaks.
+
 .PARAMETER SaveAs
     Path where to save the document. If not specified, Word will be opened visibly for interactive use.
 
 .PARAMETER Language
-    Language for day names and date formatting. Supported: French, English, German, Spanish.
+    Language for day names and date formatting. Supported: French, English.
 
-.PARAMETER HeaderFontSize
-    Font size for week headers (8-24). Defaults to 16.
+.PARAMETER FontSize
+    Font size. Defaults to 10.
 
 .PARAMETER FontFamily
     Font family to use throughout the document. Defaults to 'Aptos'.
@@ -39,13 +42,13 @@
     Creates a full year calendar for 2025 and saves it to the specified path.
 
 .EXAMPLE
-    .\WeeklyCalendar.ps1 -Language English -HeaderFontSize 18
-    Creates a calendar with English language settings and larger headers.
+    .\WeeklyCalendar.ps1 -Language English -FontSize 16
+    Creates a calendar with English language settings and larger font.
 
 .NOTES
     Requires Microsoft Word to be installed.
     Uses ISO 8601 week numbering (weeks start on Monday).
-    
+
     Author: Pascal Havelange
     License: MIT License - https://opensource.org/licenses/MIT
              You are free to use, modify, and distribute this software without restriction.
@@ -57,17 +60,22 @@ param (
     [Parameter(ParameterSetName = 'SaveAs')]
     #[ValidateRange(1900, 2100)]
     [int]$Year = (Get-Date).Year,
-    
+
     [Parameter(ParameterSetName = 'Default')]
     [Parameter(ParameterSetName = 'SaveAs')]
     #[ValidateRange(1, 53)]
     [int]$FromWeek = 1,
-    
+
     [Parameter(ParameterSetName = 'Default')]
     [Parameter(ParameterSetName = 'SaveAs')]
     #[ValidateRange(1, 52)]
     [int]$NumberOfWeeks = 6,
-    
+
+    [Parameter(ParameterSetName = 'Default')]
+    [Parameter(ParameterSetName = 'SaveAs')]
+    [ValidateRange(0, 53)]
+    [int]$BreakAfter = 3,
+
     [Parameter(ParameterSetName = 'SaveAs', Mandatory = $true)]
     [ValidateScript({
         $directory = Split-Path $_ -Parent
@@ -77,7 +85,7 @@ param (
         $true
     })]
     [string]$SaveAs,
-    
+
     [Parameter(ParameterSetName = 'Default')]
     [Parameter(ParameterSetName = 'SaveAs')]
     [ValidateScript({
@@ -89,16 +97,6 @@ param (
         }
     })]
     [string]$Language = 'French',
-    
-    [Parameter(ParameterSetName = 'Default')]
-    [Parameter(ParameterSetName = 'SaveAs')]
-    [ValidateRange(8, 24)]
-    [int]$HeaderFontSize = 16,
-
-    [Parameter(ParameterSetName = 'Default')]
-    [Parameter(ParameterSetName = 'SaveAs')]
-    [ValidateRange(8, 24)]
-    [int]$SubtitleFontSize = 8,
 
     [Parameter(ParameterSetName = 'Default')]
     [Parameter(ParameterSetName = 'SaveAs')]
@@ -108,18 +106,27 @@ param (
     [Parameter(ParameterSetName = 'Default')]
     [Parameter(ParameterSetName = 'SaveAs')]
     [string]$FontFamily = 'Aptos',
-    
+
     [Parameter(ParameterSetName = 'SaveAs')]
-    [switch]$Force
+    [switch]$Force,
+
+    [Parameter(ParameterSetName = 'CurrentWeek')]
+    [switch]$CurrentWeek
 )
 Process {
     # Main script execution
-    try {
-        New-WeeklyCalendar -Year $Year -FromWeek $FromWeek -NumberOfWeeks $NumberOfWeeks -SaveAs $SaveAs -Language $Language -HeaderFontSize $HeaderFontSize -SubtitleFontSize $SubtitleFontSize -FontSize $FontSize -FontFamily $FontFamily -Force:$Force -ParameterSetName $PSCmdlet.ParameterSetName
-    }
-    catch {
-        Write-Error "Failed to generate calendar: $_"
-        throw
+    if ($CurrentWeek.IsPresent -and $CurrentWeek) {
+        $Week = Get-ISOWeekNumber -Date (Get-Date)
+        Write-Host "Week number for (Get-Date) is $Week" -ForegroundColor Green
+        return $Week
+    } else {
+        try {
+            New-WeeklyCalendar -Year $Year -FromWeek $FromWeek -NumberOfWeeks $NumberOfWeeks -SaveAs $SaveAs -Language $Language -FontSize $FontSize -FontFamily $FontFamily -BreakAfter $BreakAfter -Force:$Force -ParameterSetName $PSCmdlet.ParameterSetName
+        }
+        catch {
+            Write-Error "Failed to generate calendar: $_"
+            throw
+        }
     }
 }
 Begin {
@@ -130,42 +137,41 @@ Begin {
             [int]$Year,
             [int]$FromWeek,
             [int]$NumberOfWeeks,
+            [int]$BreakAfter,
             [string]$SaveAs,
             [string]$Language,
-            [int]$HeaderFontSize,
-            [int]$SubtitleFontSize,
             [int]$FontSize,
             [string]$FontFamily,
             [switch]$Force,
             [string]$ParameterSetName
         )
-        
+
         $Constants = Get-WordConstants -All
         $LanguageConfig = Get-LanguageConfiguration -Language $Language
-        
+
         # Validate Word application availability
         if (-not (Test-WordApplication)) {
             throw "Microsoft Word is required but not available."
         }
-        
+
         # Test file overwrite if saving
         if ($ParameterSetName -eq 'SaveAs') {
             Test-FileOverwrite -FilePath $SaveAs -Force:$Force
         }
-        
+
         # Initialize progress tracking
         $progress = @{
             Activity = "Generating Weekly Calendar"
             Status = "Initializing..."
             PercentComplete = 0
         }
-        
+
         Write-Progress @progress
-        
+
         # Create Word application with timeout handling
         $word = $null
         $doc = $null
-        
+
         try {
             $word = New-Object -ComObject Word.Application
             if ($ParameterSetName -eq 'SaveAs') {
@@ -173,7 +179,7 @@ Begin {
             } else {
                 $word.Visible = $true
             }
-            
+
             # Create a new document
             $doc = $word.Documents.Add()
             $doc.PageSetup.TopMargin = $word.CentimetersToPoints(2.0)
@@ -183,8 +189,8 @@ Begin {
 
             $groupingCounter = 0
             $totalWeeks = $NumberOfWeeks + 1
-            
-            for ($week = $FromWeek; $week -le ($FromWeek + $NumberOfWeeks); $week++) {
+
+            for ($week = $FromWeek; $week -lT ($FromWeek + $NumberOfWeeks); $week++) {
                 $groupingCounter++
                 $currentProgress = [math]::Round(($groupingCounter / $totalWeeks) * 100, 0)
 
@@ -201,7 +207,7 @@ Begin {
                     $doc.Range($doc.Content.End - 1, $doc.Content.End - 1).InsertBreak($Constants.WD_SECTION_BREAK_NEXT_PAGE)
                     $groupingCounter = 1
                 }
-                
+
                 # Add a table with 8 rows and 1 column
                 $docParagraph = $doc.Paragraphs.Add()
                 $docParagraph.Format.KeepTogether = $true
@@ -221,9 +227,9 @@ Begin {
                 if ($groupingCounter -eq 1) {
                     # First week of the group - show ending year or starting year week number is 1
                     if ($actualWeek -eq 1) {
-                        $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($startDate.Year))"
-                    } else {
                         $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($endDate.Year))"
+                    } else {
+                        $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek ($($startDate.Year))"
                     }
                 } elseif ($actualWeek -in @(52,53)) {
                     # Year transition case for week 52/53
@@ -234,22 +240,22 @@ Begin {
                 } else {
                     $HeaderText = "$($LanguageConfig.WeekPrefix)$actualWeek"
                 }
-                
-                Add-TableRow -Table $table -RowNumber $CurrentRow -Text $HeaderText -FontFamily $FontFamily -FontSize $HeaderFontSize -Bold -IsHeader
+
+                Add-TableRow -Table $table -RowNumber $CurrentRow -Text $HeaderText -FontFamily $FontFamily -FontSize ($FontSize + [int]($FontSize * .2)) -Bold -IsHeader
 
                 # Row 2: Subtitle
                 $CurrentRow++
                 if ($startDate.Month -ne $endDate.Month) {
                     if ($startDate.Year -ne $endDate.Year) {
-                        $SubtitleText = $LanguageConfig.DateFormat.DifferentYear -f $startDate.ToString("d'/'MM'/'yyyy"), $endDate.ToString("d'/'MM'/'yyyy")
+                        $SubtitleText = $LanguageConfig.DateRangeFormat -f $startDate.ToString($LanguageConfig.DateFormat.DifferentYear.From), $endDate.ToString($LanguageConfig.DateFormat.DifferentYear.To)
                     } else {
-                        $SubtitleText = $LanguageConfig.DateFormat.DifferentMonth -f $startDate.ToString("d'/'MM"), $endDate.ToString("d'/'MM'/'yyyy")
+                        $SubtitleText = $LanguageConfig.DateRangeFormat -f $startDate.ToString($LanguageConfig.DateFormat.DifferentMonth.From), $endDate.ToString($LanguageConfig.DateFormat.DifferentMonth.To)
                     }
                 } else {
-                    $SubtitleText = $LanguageConfig.DateFormat.SameMonth -f $startDate.Day, $endDate.ToString("d'/'MM")
+                    $SubtitleText = $LanguageConfig.DateRangeFormat -f $startDate.ToString($LanguageConfig.DateFormat.SameMonth.From), $endDate.ToString($LanguageConfig.DateFormat.SameMonth.To)
                 }
-                
-                Add-TableRow -Table $table -RowNumber $CurrentRow -Text $SubtitleText -FontFamily $FontFamily <#-FontSize $SubtitleFontSize -Bold#> -FontSize $FontSize -FontColor ([System.Drawing.Color]::FromArgb(128, 0, 0))
+
+                Add-TableRow -Table $table -RowNumber $CurrentRow -Text $SubtitleText -FontFamily $FontFamily -FontSize $FontSize -FontColor ([System.Drawing.Color]::FromArgb(128, 0, 0))
 
                 # Row 3: Spacer
                 $CurrentRow++
@@ -262,9 +268,18 @@ Begin {
                     Add-TableRow -Table $table -RowNumber $CurrentRow -Text "$($days[$i])`t:" -FontFamily $FontFamily -FontSize $FontSize
                 }
 
-                if ($groupingCounter -gt 0 -and $groupingCounter % 3 -eq 0) {
-                    # Page break on every multiple of 4 - insert break at current position
-                    $doc.Range($doc.Content.End - 1, $doc.Content.End - 1).InsertBreak($Constants.WD_SECTION_BREAK_NEXT_PAGE)
+                if ($breakAfter -gt 0) {
+                    if ($groupingCounter -gt 0 -and $groupingCounter % $breakAfter -eq 0) {
+                        # Page break on every multiple of breakAfter (save for the very last week)
+                        if ($week -lt (($FromWeek + $NumberOfWeeks) - 1)) {
+                            $doc.Range($doc.Content.End - 1, $doc.Content.End - 1).InsertBreak($Constants.WD_SECTION_BREAK_NEXT_PAGE)
+                        }
+                    } else {
+                        # Add controlled spacing after each table
+                        $newPara = $doc.Paragraphs.Add()
+                        $newPara.SpaceAfter = 0  # Remove after-paragraph spacing
+                        $newPara.SpaceBefore = 6  # Small before-paragraph spacing (6 points)
+                    }
                 } else {
                     # Add controlled spacing after each table
                     $newPara = $doc.Paragraphs.Add()
@@ -289,7 +304,7 @@ Begin {
         finally {
             # Cleanup COM objects
             Write-Progress -Activity "Generating Weekly Calendar" -Completed
-            
+
             if ($doc) {
                 try {
                     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($doc) | Out-Null
@@ -298,7 +313,7 @@ Begin {
                     Write-Warning "Failed to release document COM object: $_"
                 }
             }
-            
+
             if ($word) {
                 try {
                     if ($ParameterSetName -eq 'SaveAs') {
@@ -310,7 +325,7 @@ Begin {
                     Write-Warning "Failed to release Word COM object: $_"
                 }
             }
-            
+
             [System.GC]::Collect()
             [System.GC]::WaitForPendingFinalizers()
         }
@@ -323,14 +338,14 @@ Begin {
         param(
             [Parameter(ParameterSetName = 'GetConstant')]
             [string]$ConstantName,
-            
+
             [Parameter(ParameterSetName = 'GetAll')]
             [switch]$All,
-            
+
             [Parameter(ParameterSetName = 'ListConstants')]
             [switch]$ListAvailable
         )
-        
+
         $WordConstants = @{
             WD_LINE_STYLE_NONE = 0
             WD_LINE_STYLE_SINGLE = 1
@@ -354,7 +369,7 @@ Begin {
             WD_ROW_HEIGHT_AT_LEAST = 1
             WD_ROW_HEIGHT_EXACTLY = 2
         }
-        
+
         switch ($PSCmdlet.ParameterSetName) {
             'GetConstant' {
                 if ($WordConstants.ContainsKey($ConstantName)) {
@@ -381,72 +396,55 @@ Begin {
         param(
             [Parameter(ParameterSetName = 'GetLanguage')]
             [string]$Language,
-            
+
             [Parameter(ParameterSetName = 'ListLanguages')]
             [switch]$ListAvailable
         )
-        
+
         $LanguageConfig = @{
             French = @{
                 Days = @("LUN", "MAR", "MER", "JEU", "VEN")
                 WeekPrefix = "SEM."
+                DateRangeFormat = "({0} → {1})"
                 DateFormat = @{
-                    SameMonth = "Du {0} au {1}."
-                    DifferentMonth = "Du {0} au {1}."
-                    DifferentYear = "Du {0} au {1}."
+                    SameMonth = @{
+                        From = "%d"
+                        To = "d'/'MM"
+                    }
+                    DifferentMonth = @{
+                        From = "d'/'MM"
+                        To = "d'/'MM'/'yyyy"
+                    }
+                    DifferentYear = @{
+                        From = "d'/'MM'/'yyyy"
+                        To = "d'/'MM'/'yyyy"
+                    }
                 }
             }
             English = @{
                 Days = @("MON", "TUE", "WED", "THU", "FRI")
                 WeekPrefix = "WK. "
                 DateFormat = @{
-                    SameMonth = "From {0} to {1}."
-                    DifferentMonth = "From {0} to {1}."
-                    DifferentYear = "From {0} to {1}."
-                }
-            }
-            German = @{
-                Days = @("MON", "DIE", "MIT", "DON", "FRE")
-                WeekPrefix = "KW. "
-                DateFormat = @{
-                    SameMonth = "Vom {0} bis {1}."
-                    DifferentMonth = "Vom {0} bis {1}."
-                    DifferentYear = "Vom {0} bis {1}."
-                }
-            }
-            Spanish = @{
-                Days = @("LUN", "MAR", "MIÉ", "JUE", "VIE")
-                WeekPrefix = "SEM. "
-                DateFormat = @{
-                    SameMonth = "Del {0} al {1}."
-                    DifferentMonth = "Del {0} al {1}."
-                    DifferentYear = "Del {0} al {1}."
-                }
-            }
-            Italian = @{
-                Days = @("LUN", "MAR", "MER", "GIO", "VEN")
-                WeekPrefix = "SETT. "
-                DateFormat = @{
-                    SameMonth = "Dal {0} al {1}."
-                    DifferentMonth = "Dal {0} al {1}."
-                    DifferentYear = "Dal {0} al {1}."
-                }
-            }
-            Portuguese = @{
-                Days = @("SEG", "TER", "QUA", "QUI", "SEX")
-                WeekPrefix = "SEM. "
-                DateFormat = @{
-                    SameMonth = "De {0} a {1}."
-                    DifferentMonth = "De {0} a {1}."
-                    DifferentYear = "De {0} a {1}."
+                    SameMonth = @{
+                        From = "d"
+                        To = "d'/'MM"
+                    }
+                    DifferentMonth = @{
+                        From = "d'/'MM"
+                        To = "d'/'MM'/'yyyy"
+                    }
+                    DifferentYear = @{
+                        From = "d'/'MM'/'yyyy"
+                        To = "d'/'MM'/'yyyy"
+                    }
                 }
             }
         }
-        
+
         if ($ListAvailable) {
             return $LanguageConfig.Keys | Sort-Object
         }
-        
+
         if ($Language -and $LanguageConfig.ContainsKey($Language)) {
             return $LanguageConfig[$Language]
         } elseif ($Language) {
@@ -462,12 +460,12 @@ Begin {
             [Parameter(Mandatory)]
             #[ValidateRange(1900, 2100)]
             [int]$Year,
-            
+
             [Parameter(Mandatory)]
             #[ValidateRange(1, 53)]
             [int]$Week
         )
-        
+
         try {
             $jan4 = Get-Date -Year $Year -Month 1 -Day 4
             $dayOfWeek = [int]$jan4.DayOfWeek
@@ -486,7 +484,7 @@ Begin {
             [Parameter(Mandatory)]
             [DateTime]$Date
         )
-        
+
         try {
             $calendar = [System.Globalization.CultureInfo]::InvariantCulture.Calendar
             $week = $calendar.GetWeekOfYear(
@@ -521,10 +519,10 @@ Begin {
         param(
             [Parameter(Mandatory)]
             $Cell,
-            
+
             [int]$LineStyle = (Get-WordConstants -ConstantName 'WD_LINE_STYLE_NONE')
         )
-        
+
         try {
             $Cell.Borders.Item(1).LineStyle = $LineStyle
             $Cell.Borders.Item(2).LineStyle = $LineStyle
@@ -543,13 +541,13 @@ Begin {
         param(
             [Parameter(Mandatory)]
             $Paragraph,
-            
+
             [int]$BottomLineStyle = (Get-WordConstants -ConstantName 'WD_LINE_STYLE_SINGLE'),
             [int]$LineWidth = (Get-WordConstants -ConstantName 'WD_LINE_WIDTH_075PT')
         )
-        
+
         $Constants = Get-WordConstants -All
-        
+
         try {
             $Paragraph.Format.Borders.Enable = $true
             $Paragraph.Format.Borders.Item(1).LineStyle = $Constants.WD_LINE_STYLE_NONE  # Top
@@ -568,31 +566,31 @@ Begin {
         param(
             [Parameter(Mandatory)]
             $Table,
-            
+
             [Parameter(Mandatory)]
             [int]$RowNumber,
-            
+
             [Parameter(Mandatory)]
             [AllowEmptyString()]
             [string]$Text,
-            
+
             [string]$FontFamily,
-            
+
             [int]$FontSize = 8,
-            
+
             [double]$LineHeight = 1.0,
-            
+
             [switch]$Bold,
-            
+
             [System.Drawing.Color]$FontColor,
-            
+
             [switch]$IsHeader,
-            
+
             [switch]$HasNoBorders
         )
-        
+
         $Constants = Get-WordConstants -All
-        
+
         try {
             # Get the cell and clear it
             $cell = $Table.Cell($RowNumber, 1)
@@ -603,24 +601,24 @@ Begin {
             $row = $Table.Rows.Item($RowNumber)
             $row.HeightRule = $Constants.WD_ROW_HEIGHT_EXACTLY
             $row.Height = $Table.Application.CentimetersToPoints($LineHeight)
-            
+
             # Configure the paragraph
             $paragraph = $cell.Range.Paragraphs.Item(1)
             $paragraph.Range.Text = $Text
             $paragraph.Range.Font.Size = $FontSize
-            
+
             if ($FontFamily) {
                 $paragraph.Range.Font.Name = $FontFamily
             }
-            
+
             if ($Bold) {
                 $paragraph.Range.Font.Bold = $true
             }
-            
+
             if ($FontColor) {
                 $paragraph.Range.Font.Color = $FontColor
             }
-            
+
             # Apply borders unless HasNoBorders is specified
             if (-not $HasNoBorders) {
                 Set-ParagraphBorders -Paragraph $paragraph
@@ -634,7 +632,7 @@ Begin {
     function Test-WordApplication {
         [CmdletBinding()]
         param()
-        
+
         try {
             $testWord = New-Object -ComObject Word.Application -ErrorAction Stop
             $testWord.Quit()
@@ -652,10 +650,10 @@ Begin {
         param(
             [Parameter(Mandatory)]
             [string]$FilePath,
-            
+
             [switch]$Force
         )
-        
+
         if (Test-Path $FilePath) {
             if (-not $Force) {
                 $response = Read-Host "File '$FilePath' already exists. Overwrite? (Y/N)"
@@ -663,7 +661,7 @@ Begin {
                     throw "Operation cancelled by user."
                 }
             }
-            
+
             # Test if file is locked
             try {
                 [System.IO.File]::OpenWrite($FilePath).Close()
