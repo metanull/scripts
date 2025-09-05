@@ -249,7 +249,7 @@ Begin {
                     $SubtitleText = $LanguageConfig.DateFormat.SameMonth -f $startDate.Day, $endDate.ToString("d'/'MM")
                 }
                 
-                Add-TableRow -Table $table -RowNumber $CurrentRow -Text $SubtitleText -FontFamily $FontFamily -FontSize $FontSize # -FontSize $SubtitleFontSize -Bold -FontColor ([System.Drawing.Color]::FromArgb(128, 0, 0))
+                Add-TableRow -Table $table -RowNumber $CurrentRow -Text $SubtitleText -FontFamily $FontFamily <#-FontSize $SubtitleFontSize -Bold#> -FontSize $FontSize -FontColor ([System.Drawing.Color]::FromArgb(128, 0, 0))
 
                 # Row 3: Spacer
                 $CurrentRow++
